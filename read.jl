@@ -15,6 +15,7 @@
 # Feel free to modify this file at your own convenience !
 # Also ask any questions to me directly (syntax, usage, etc.)
 #  -- Verchère
+
 # ---------------------------------------------------------------
 
 function readInstance(file::String)
