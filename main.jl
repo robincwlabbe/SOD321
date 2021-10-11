@@ -9,7 +9,7 @@ include("read.jl")
 include("functions.jl")
 
 
-function resolution(n,d,f,Amin,Nr,R,regions,coords,mod)
+#function resolution(n,d,f,Amin,Nr,R,regions,coords,mod)
 # ---------------------------------------------------------------
 # Function that compiutes the optimum
 # Parameter meanings :
@@ -25,7 +25,9 @@ function resolution(n,d,f,Amin,Nr,R,regions,coords,mod)
 # mod : exponential or polynomial formulation to solve the problem.
 # ---------------------------------------------------------------
 
-	
+n,d,f,Amin,Nr,R,regions,coords=readInstance("/Users/antoine/Desktop/3A_ENSTA/SOD321_ELLOUMI/PROJET/Instances-20211005/instance_6_1.txt")
+mod="polynomial"
+
 	D = compute_distances(coords)
 
 	#declaration du modele
@@ -76,7 +78,7 @@ function resolution(n,d,f,Amin,Nr,R,regions,coords,mod)
     #toutes les regions sont visitées:
 
     reg = [i for i in 1:Nr]
-    @constraint(model, [i in reg], sum(sum(x[regions[i][k],j] + x[j,regions[i][k]] for j in 1:n) for k in regions[i]) >= 1)
+    @constraint(model, [i in reg], sum(sum(x[k,j] + x[j,k] for j in 1:n) for k in regions[i]) >= 1)
 
 	#nombre minimum d'aeroports à visiter   
 	if d == f
@@ -94,8 +96,8 @@ function resolution(n,d,f,Amin,Nr,R,regions,coords,mod)
 					u[j] >= u[i] + 1 - n * (1 - x[i, j]))
 	end
 
-	return(model)
-end
+	#return(model)
+#end
 
 
 #function optimization(model)
