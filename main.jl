@@ -25,8 +25,8 @@ include("functions.jl")
 # mod : exponential or polynomial formulation to solve the problem.
 # ---------------------------------------------------------------
 
-n,d,f,Amin,Nr,R,regions,coords = readInstance("/Users/antoine/Desktop/3A_ENSTA/SOD321_ELLOUMI/PROJET/Instances-20211005/instance_6_1.txt")
-mod=""
+n,d,f,Amin,Nr,R,regions,coords = readInstance("C:/Users/User/Desktop/3A/M2/SOD321/SOD321/instance_70_1.txt")
+mod="polynomial"
 	#n,d,f,Amin,Nr,R,regions,coords = readInstance(path)	
 	D = compute_distances(coords)
 
@@ -94,9 +94,36 @@ mod=""
 		@variable(model, u[i = 1:n], Int)
 		@constraint(model, subtour[i=1:n, j=1:n],
 					u[j] >= u[i] + 1 - n * (1 - x[i, j]))
+		JuMP.optimize!(model)
+				
+		println("fin")
+		println(JuMP.objective_value(model))
 	else
-        #@time objective, solution, solving_time = solve_w_lazy_ILP!(model, d, f)
-        print("")
+		JuMP.optimize!(model)
+	#definition variable pour boucle while
+		global obj_value = 1
+	
+		while obj_value >0
+			#creation sous probleme
+			sub_problem = Model(with_optimizer(Gurobi.Optimizer))
+			@variable(sub_problem, a[1:n], Bin)  #ai= 1 si l'aeroport i est visité
+			y = model[:x]
+			@objective(sub_problem, Max, sum(sum(JuMP.value(y[i,j])*a[i]*a[j] for j in 1:n) for i in 1:n ) - sum(a[i] for i in 1:n) + 1)
+			@constraint(sub_problem, sum(a[i] for i in 1:n)>=1)
+			#resolution sous probleme
+			JuMP.optimize!(sub_problem)
+			#ajout de la contrainte qui viole le plus et resolution du sous probleme
+			@constraint(model, sum(sum(x[i,j]*JuMP.value(a[i])*JuMP.value(a[j]) for j in 1:n) for i in 1:n ) <= sum(JuMP.value(a[i]) for i in 1:n)-1)
+			JuMP.optimize!(model)
+			#mise a jour pour voir si l'objectif est positif
+			global obj_value = JuMP.objective_value(sub_problem)
+
+		end
+
+		println("fin")
+		println(JuMP.objective_value(model))
+
+
 	end
 
 	#return(model)
@@ -105,30 +132,8 @@ mod=""
 #### Separation ####
 
 #On optimise le modele maitre
-JuMP.optimize!(model)
 
-#definition variable pour boucle while
-global obj_value = 1
 
-while obj_value >0
-	#creation sous probleme
-	sub_problem = Model(with_optimizer(Gurobi.Optimizer))
-	@variable(sub_problem, a[1:n], Bin)  #ai= 1 si l'aeroport i est visité
-	y = model[:x]
-	@objective(sub_problem, Max, sum(sum(JuMP.value(y[i,j])*a[i]*a[j] for j in 1:n) for i in 1:n ) - sum(a[i] for i in 1:n) + 1)
-	@constraint(sub_problem, sum(a[i] for i in 1:n)>=1)
-	#resolution sous probleme
-	JuMP.optimize!(sub_problem)
-	#ajout de la contrainte qui viole le plus et resolution du sous probleme
-	@constraint(model, sum(sum(x[i,j]*JuMP.value(a[i])*JuMP.value(a[j]) for j in 1:n) for i in 1:n ) <= sum(JuMP.value(a[i]) for i in 1:n)-1)
-	JuMP.optimize!(model)
-	#mise a jour pour voir si l'objectif est positif
-	global obj_value = JuMP.objective_value(sub_problem)
-
-	end
-
-println("fin")
-println(JuMP.objective_value(model))
 
 	#declaration des variables
 #    
