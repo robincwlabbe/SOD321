@@ -9,7 +9,7 @@ include("read.jl")
 include("functions.jl")
 
 
-#function resolution(n,d,f,Amin,Nr,R,regions,coords,mod)
+#function resolution(path,mod)
 # ---------------------------------------------------------------
 # Function that compiutes the optimum
 # Parameter meanings :
@@ -25,9 +25,9 @@ include("functions.jl")
 # mod : exponential or polynomial formulation to solve the problem.
 # ---------------------------------------------------------------
 
-n,d,f,Amin,Nr,R,regions,coords=readInstance("/Users/antoine/Desktop/3A_ENSTA/SOD321_ELLOUMI/PROJET/Instances-20211005/instance_6_1.txt")
-mod="polynomial"
-
+n,d,f,Amin,Nr,R,regions,coords = readInstance("/Users/antoine/Desktop/3A_ENSTA/SOD321_ELLOUMI/PROJET/Instances-20211005/instance_6_1.txt")
+mod=""
+	#n,d,f,Amin,Nr,R,regions,coords = readInstance(path)	
 	D = compute_distances(coords)
 
 	#declaration du modele
@@ -43,10 +43,10 @@ mod="polynomial"
 	#declaration des contraintes
 	@constraint(model, diag(x) .== 0)  # removes x_ii
 	
-	#On n’atterit au plus une fois dans chaque aeroport
+	#On décolle au plus une fois dans chaque aeroport
 	@constraint(model, [i in 1:n], sum(x[i,j] for j in 1:n)<=1)
 	
-	#On décolle au plus une fois dans chaque aeroport
+	#On  au plus une fois dans chaque aeroport
 	@constraint(model, [i in 1:n], sum(x[j,i] for j in 1:n)<=1) 
 
 	#contrainte sur le depart
@@ -94,18 +94,47 @@ mod="polynomial"
 		@variable(model, u[i = 1:n], Int)
 		@constraint(model, subtour[i=1:n, j=1:n],
 					u[j] >= u[i] + 1 - n * (1 - x[i, j]))
+	else
+        #@time objective, solution, solving_time = solve_w_lazy_ILP!(model, d, f)
+        print("")
 	end
 
 	#return(model)
 #end
 
+#### Separation ####
 
-#function optimization(model)
-#	JuMP.optimize!(model)
+#On optimise le modele maitre
+JuMP.optimize!(model)
+
+#definition variable pour boucle while
+global obj_value = 1
+
+while obj_value >0
+	#creation sous probleme
+	sub_problem = Model(with_optimizer(Gurobi.Optimizer))
+	@variable(sub_problem, a[1:n], Bin)  #ai= 1 si l'aeroport i est visité
+	y = model[:x]
+	@objective(sub_problem, Max, sum(sum(JuMP.value(y[i,j])*a[i]*a[j] for j in 1:n) for i in 1:n ) - sum(a[i] for i in 1:n) + 1)
+	@constraint(sub_problem, sum(a[i] for i in 1:n)>=1)
+	#resolution sous probleme
+	JuMP.optimize!(sub_problem)
+	#ajout de la contrainte qui viole le plus et resolution du sous probleme
+	@constraint(model, sum(sum(x[i,j]*JuMP.value(a[i])*JuMP.value(a[j]) for j in 1:n) for i in 1:n ) <= sum(JuMP.value(a[i]) for i in 1:n)-1)
+	JuMP.optimize!(model)
+	#mise a jour pour voir si l'objectif est positif
+	global obj_value = JuMP.objective_value(sub_problem)
+
+	end
+
+println("fin")
+println(JuMP.objective_value(model))
+
+	#declaration des variables
 #    
 #	#affichage des resultats
-#	obj_value = JuMP.objective_value(model)
-#	println("Objective value: ", obj_value)
+#obj_value = JuMP.objective_value(model)
+#println("Objective value: ", obj_value)
 #	value.(x)
 #end
 
