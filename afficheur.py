@@ -39,12 +39,13 @@ for r in lines[6].split():
 path_latitude = [latitude[i-1] for i in path]
 path_longitude = [longitude[i-1] for i in path]
 
-
+plt.figure(dpi=1200)
 scatter = plt.scatter(longitude,latitude,c=regions)
 labels_regions = [regions[i] for i in sorted(np.unique(regions, return_index=True)[1])]
 plt.legend(handles=scatter.legend_elements()[0],
-           labels=labels_regions)
-plt.plot(path_longitude,path_latitude,label = "path")
+           labels=labels_regions,
+           title = "Regions")
+plt.plot(path_longitude,path_latitude,label = "path", c = 'r')
 
 plt.grid()
 
