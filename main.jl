@@ -1,10 +1,9 @@
 #import des packages
 
+
 using LinearAlgebra: diag, norm, Symmetric
 using JuMP
 import Gurobi
-
-
 include("read.jl")
 include("functions.jl")
 
@@ -25,8 +24,8 @@ include("functions.jl")
 # mod : exponential or polynomial formulation to solve the problem.
 # ---------------------------------------------------------------
 
-n,d,f,Amin,Nr,R,regions,coords = readInstance("/Users/antoine/Desktop/3A_ENSTA/SOD321_ELLOUMI/PROJET/Instances-20211005/instance_6_1.txt")
-mod=""
+n,d,f,Amin,Nr,R,regions,coords = readInstance("/Users/antoine/Desktop/3A_ENSTA/SOD321_ELLOUMI/PROJET/Instances-20211005/instance_40_1.txt")
+mod = "exponential_1"
 	#n,d,f,Amin,Nr,R,regions,coords = readInstance(path)	
 	D = compute_distances(coords)
 
@@ -94,48 +93,141 @@ mod=""
 		@variable(model, u[i = 1:n], Int)
 		@constraint(model, subtour[i=1:n, j=1:n],
 					u[j] >= u[i] + 1 - n * (1 - x[i, j]))
-	else
-        #@time objective, solution, solving_time = solve_w_lazy_ILP!(model, d, f)
-        print("")
+		JuMP.optimize!(model)
+		println("aaa")
+	end
+	
+	if mod == "exponential_1" #resolution SEP
+	#### Separation ####
+		#JuMP.unset_binary(x::Matrix{VariableRef})
+
+		#On optimise le modele maitre
+		JuMP.optimize!(model)
+		global solving_time = MOI.get(model, MOI.SolveTime())
+		#definition variable pour boucle while
+		sub_problem = Model(with_optimizer(Gurobi.Optimizer))
+		@variable(sub_problem, a[1:n], Bin)  #ai= 1 si l'aeroport i est visité
+		y = model[:x]
+		@objective(sub_problem, Max, sum(sum(JuMP.value(y[i,j])*a[i]*a[j] for j in 1:n) for i in 1:n ) - sum(a[i] for i in 1:n) + 1)
+		@constraint(sub_problem, sum(a[i] for i in 1:n)>=1)
+		#resolution sous probleme
+		JuMP.optimize!(sub_problem)
+		#mise a jour pour voir si l'objectif est positif
+		global obj_value = JuMP.objective_value(sub_problem)
+		global solving_time = solving_time + MOI.get(sub_problem, MOI.SolveTime())
+		
+		if obj_value>0
+			#ajout de la contrainte qui viole le plus et resolution du sous probleme
+			@constraint(model, sum(sum(x[i,j]*JuMP.value(a[i])*JuMP.value(a[j]) for j in 1:n) for i in 1:n ) <= sum(JuMP.value(a[i]) for i in 1:n)-1)
+			JuMP.optimize!(model)
+			global solving_time = solving_time + MOI.get(model, MOI.SolveTime())
+		end
+
+		while obj_value >0 
+			#creation sous probleme
+			oldstd = stdout
+			redirect_stdout(open("null", "w")) #rediriger temporairement l'output
+			sub_problem = Model(Gurobi.Optimizer)
+			
+			@variable(sub_problem, a[1:n], Bin)  #ai= 1 si l'aeroport i est visité
+			y = model[:x]
+			@objective(sub_problem, Max, sum(sum(JuMP.value(y[i,j])*a[i]*a[j] for j in 1:n) for i in 1:n ) - sum(a[i] for i in 1:n) + 1)
+			@constraint(sub_problem, sum(a[i] for i in 1:n)>=1)
+			#resolution sous probleme
+			JuMP.optimize!(sub_problem)
+			global solving_time = solving_time + MOI.get(sub_problem, MOI.SolveTime())
+			#mise a jour pour voir si l'objectif est positif
+			global obj_value = JuMP.objective_value(sub_problem)
+
+			if obj_value>0
+				#ajout de la contrainte qui viole le plus et resolution du sous probleme
+				@constraint(model, sum(sum(x[i,j]*JuMP.value(a[i])*JuMP.value(a[j]) for j in 1:n) for i in 1:n ) <= sum(JuMP.value(a[i]) for i in 1:n)-1)
+				JuMP.optimize!(model)
+				global solving_time = solving_time + MOI.get(model, MOI.SolveTime())
+			end
+			redirect_stdout(oldstd) #rediriger l'output vers sa sortie normale
+		end
+		#JuMP.unset_binary(x::Matrix{VariableRef})
+		#JuMP.optimize!(model)
+		#global solving_time = solving_time + MOI.get(model, MOI.SolveTime())
+		println("fin1")
 	end
 
-	#return(model)
-#end
 
-#### Separation ####
+	if mod == "exponential_2" #resolution SEP generalisé
+	#### Separation ####
+		#JuMP.unset_binary(x::Matrix{VariableRef})
 
-#On optimise le modele maitre
-JuMP.optimize!(model)
+		#On optimise le modele maitre
+		JuMP.optimize!(model)
+		global solving_time = MOI.get(model, MOI.SolveTime())
+		#definition variable pour boucle while
+		global obj_value = 1
+		sub_problem = Model(with_optimizer(Gurobi.Optimizer))
+		@variable(sub_problem, a[1:n], Bin)  #ai= 1 si l'aeroport i est visité
+		@variable(sub_problem, h[1:n], Bin)
+		y = model[:x]
+		sommets_visit = sommets_visites(value.(y),d,f)
+		x_tilde = [0 for i in 1:n]
+		for i in sommets_visit
+			x_tilde[i] = 1
+		end
+		@objective(sub_problem, Max, sum(sum(JuMP.value(y[i,j])*a[i]*a[j] for j in 1:n) for i in 1:n ) - sum(JuMP.value(x_tilde[i])*a[i] for i in 1:n) + sum(JuMP.value(x_tilde[i])*h[i] for i in 1:n))
+		@constraint(sub_problem, sum(h[i] for i in 1:n)==1)
+		@constraint(sub_problem, [i in 1:n],h[i]<=a[i])
+		#resolution sous probleme
+		JuMP.optimize!(sub_problem)
+		global solving_time = solving_time + MOI.get(sub_problem, MOI.SolveTime())
+		#ajout de la contrainte qui viole le plus et resolution du sous probleme
+		@constraint(model, sum(sum(x[i,j]*JuMP.value(a[i])*JuMP.value(a[j]) for j in 1:n) for i in 1:n ) <= sum(JuMP.value(a[i]) for i in 1:n)-sum(JuMP.value(a[i])*JuMP.value(h[i]) for i in 1:n))
+		JuMP.optimize!(model)
+		global solving_time = solving_time + MOI.get(model, MOI.SolveTime())
 
-#definition variable pour boucle while
-global obj_value = 1
+		#mise a jour pour voir si l'objectif est positif
+		global obj_value = JuMP.objective_value(sub_problem)
 
-while obj_value >0
-	#creation sous probleme
-	sub_problem = Model(with_optimizer(Gurobi.Optimizer))
-	@variable(sub_problem, a[1:n], Bin)  #ai= 1 si l'aeroport i est visité
-	y = model[:x]
-	@objective(sub_problem, Max, sum(sum(JuMP.value(y[i,j])*a[i]*a[j] for j in 1:n) for i in 1:n ) - sum(a[i] for i in 1:n) + 1)
-	@constraint(sub_problem, sum(a[i] for i in 1:n)>=1)
-	#resolution sous probleme
-	JuMP.optimize!(sub_problem)
-	#ajout de la contrainte qui viole le plus et resolution du sous probleme
-	@constraint(model, sum(sum(x[i,j]*JuMP.value(a[i])*JuMP.value(a[j]) for j in 1:n) for i in 1:n ) <= sum(JuMP.value(a[i]) for i in 1:n)-1)
-	JuMP.optimize!(model)
-	#mise a jour pour voir si l'objectif est positif
-	global obj_value = JuMP.objective_value(sub_problem)
+		while obj_value >0 && solving_time<30
+			#creation sous probleme
+			oldstd = stdout
+			redirect_stdout(open("null", "w")) #rediriger temporairement l'output
+			sub_problem = Model(with_optimizer(Gurobi.Optimizer))
+			@variable(sub_problem, a[1:n], Bin)  #ai= 1 si l'aeroport i est visité
+			@variable(sub_problem, h[1:n], Bin)
+			y = model[:x]
+			sommets_visit = sommets_visites(value.(y),d,f)
+			x_tilde = [0 for i in 1:n]
+			for i in sommets_visit
+				x_tilde[i] = 1
+			end
+			@objective(sub_problem, Max, sum(sum(JuMP.value(y[i,j])*a[i]*a[j] for j in 1:n) for i in 1:n ) - sum(JuMP.value(x_tilde[i])*a[i] for i in 1:n) + sum(JuMP.value(x_tilde[i])*h[i] for i in 1:n))
+			@constraint(sub_problem, sum(h[i] for i in 1:n)==1)
+			@constraint(sub_problem, [i in 1:n],h[i]<=a[i])
+			#resolution sous probleme
+			JuMP.optimize!(sub_problem)
+			global solving_time = solving_time + MOI.get(sub_problem, MOI.SolveTime())
+			#ajout de la contrainte qui viole le plus et resolution du sous probleme
+			@constraint(model, sum(sum(x[i,j]*JuMP.value(a[i])*JuMP.value(a[j]) for j in 1:n) for i in 1:n ) <= sum(JuMP.value(a[i]) for i in 1:n)-sum(JuMP.value(a[i])*JuMP.value(h[i]) for i in 1:n))
+			JuMP.optimize!(model)
+			global solving_time = solving_time + MOI.get(model, MOI.SolveTime())
+			if floor(solving_time)% 30 ==0
+				println("temps passé : ",solving_time)
+			end
+			redirect_stdout(oldstd) #rediriger l'output vers sa sortie normale
+			#mise a jour pour voir si l'objectif est positif
+			global obj_value = JuMP.objective_value(sub_problem)
+
+		end
+		#JuMP.unset_binary(x::Matrix{VariableRef})
+		#JuMP.optimize!(model)
+		#global solving_time = solving_time + MOI.get(model, MOI.SolveTime())
+	println("fin2")
 
 	end
 
-println("fin")
+#JuMP.optimize!(model)
+#global solving_time = solving_time + MOI.get(model, MOI.SolveTime())
+println("Temps de résolution : ", solving_time)
 println(JuMP.objective_value(model))
 
-	#declaration des variables
-#    
-#	#affichage des resultats
-#obj_value = JuMP.objective_value(model)
-#println("Objective value: ", obj_value)
-#	value.(x)
-#end
 
 

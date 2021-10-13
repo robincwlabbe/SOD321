@@ -2,7 +2,7 @@ using LinearAlgebra: diag, norm, Symmetric
 using JuMP
 import Gurobi
 
-function compute_distances(coordinates)::Symmetric{Float64, Array{Float64, 2}}
+function compute_distances(coordinates)
     n = size(coordinates, 1)
     distances = zeros(n, n)
     for i=2:n
@@ -11,4 +11,15 @@ function compute_distances(coordinates)::Symmetric{Float64, Array{Float64, 2}}
         end
     end
     return Symmetric(distances, :L)
+end
+
+
+function sommets_visites(x,d,f)
+    path = [d]
+    next_airport = d
+    while next_airport != f
+        next_airport = argmax(x[next_airport, :])
+        append!(path, next_airport)
+    end
+    return path
 end
