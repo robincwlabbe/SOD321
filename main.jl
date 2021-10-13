@@ -94,6 +94,7 @@ mod = "exponential_1"
 		@constraint(model, subtour[i=1:n, j=1:n],
 					u[j] >= u[i] + 1 - n * (1 - x[i, j]))
 		JuMP.optimize!(model)
+		global solving_time = MOI.get(model, MOI.SolveTime())
 		println("aaa")
 	end
 	
@@ -150,6 +151,10 @@ mod = "exponential_1"
 		#JuMP.unset_binary(x::Matrix{VariableRef})
 		#JuMP.optimize!(model)
 		#global solving_time = solving_time + MOI.get(model, MOI.SolveTime())
+		JuMP.optimize!(model)
+		global solving_time = solving_time + MOI.get(model, MOI.SolveTime())
+		println("Temps de résolution : ", solving_time)
+		println(JuMP.objective_value(model))
 		println("fin1")
 	end
 
@@ -161,73 +166,108 @@ mod = "exponential_1"
 		#On optimise le modele maitre
 		JuMP.optimize!(model)
 		global solving_time = MOI.get(model, MOI.SolveTime())
-		#definition variable pour boucle while
-		global obj_value = 1
+
+		#creation du sous probleme
 		sub_problem = Model(with_optimizer(Gurobi.Optimizer))
 		@variable(sub_problem, a[1:n], Bin)  #ai= 1 si l'aeroport i est visité
 		@variable(sub_problem, h[1:n], Bin)
+		
+		#definition des variables selections d'arcs et sommets pour la solutiondu modele
 		y = model[:x]
-		sommets_visit = sommets_visites(value.(y),d,f)
+		sommets_visites = []
+		for i in 1:n
+			for j in 1:n
+				if JuMP.value(x[i,j])!=0
+					append!(sommets_visites,[i,j])
+				end	
+			end
+		end
+
 		x_tilde = [0 for i in 1:n]
-		for i in sommets_visit
+		for i in sommets_visites
 			x_tilde[i] = 1
 		end
+		#objectifs et contraintes du sous probleme
 		@objective(sub_problem, Max, sum(sum(JuMP.value(y[i,j])*a[i]*a[j] for j in 1:n) for i in 1:n ) - sum(JuMP.value(x_tilde[i])*a[i] for i in 1:n) + sum(JuMP.value(x_tilde[i])*h[i] for i in 1:n))
 		@constraint(sub_problem, sum(h[i] for i in 1:n)==1)
 		@constraint(sub_problem, [i in 1:n],h[i]<=a[i])
+
 		#resolution sous probleme
 		JuMP.optimize!(sub_problem)
 		global solving_time = solving_time + MOI.get(sub_problem, MOI.SolveTime())
-		#ajout de la contrainte qui viole le plus et resolution du sous probleme
-		@constraint(model, sum(sum(x[i,j]*JuMP.value(a[i])*JuMP.value(a[j]) for j in 1:n) for i in 1:n ) <= sum(JuMP.value(a[i]) for i in 1:n)-sum(JuMP.value(a[i])*JuMP.value(h[i]) for i in 1:n))
-		JuMP.optimize!(model)
-		global solving_time = solving_time + MOI.get(model, MOI.SolveTime())
 
 		#mise a jour pour voir si l'objectif est positif
 		global obj_value = JuMP.objective_value(sub_problem)
 
-		while obj_value >0 && solving_time<30
+
+		if obj_value>0
+			S = BitArray(value.(a))
+        	i0 = BitArray(value.(h))
+        	@constraint(model, sum(x[S,S]) <= sum(x_tilde[S]) - sum(x_tilde[i0]))
+        	JuMP.optimize!(model)
+			global solving_time = solving_time + MOI.get(model, MOI.SolveTime())
+		end
+
+		while obj_value >0 && solving_time<60
+
 			#creation sous probleme
 			oldstd = stdout
 			redirect_stdout(open("null", "w")) #rediriger temporairement l'output
+			
+			
 			sub_problem = Model(with_optimizer(Gurobi.Optimizer))
 			@variable(sub_problem, a[1:n], Bin)  #ai= 1 si l'aeroport i est visité
 			@variable(sub_problem, h[1:n], Bin)
+			
 			y = model[:x]
-			sommets_visit = sommets_visites(value.(y),d,f)
+			sommets_visites = []
+			for i in 1:n
+				for j in 1:n
+					if JuMP.value(x[i,j])!=0
+						append!(sommets_visites,[i,j])
+					end	
+				end
+			end
 			x_tilde = [0 for i in 1:n]
-			for i in sommets_visit
+			for i in sommets_visites
 				x_tilde[i] = 1
 			end
+
 			@objective(sub_problem, Max, sum(sum(JuMP.value(y[i,j])*a[i]*a[j] for j in 1:n) for i in 1:n ) - sum(JuMP.value(x_tilde[i])*a[i] for i in 1:n) + sum(JuMP.value(x_tilde[i])*h[i] for i in 1:n))
 			@constraint(sub_problem, sum(h[i] for i in 1:n)==1)
 			@constraint(sub_problem, [i in 1:n],h[i]<=a[i])
 			#resolution sous probleme
 			JuMP.optimize!(sub_problem)
 			global solving_time = solving_time + MOI.get(sub_problem, MOI.SolveTime())
-			#ajout de la contrainte qui viole le plus et resolution du sous probleme
-			@constraint(model, sum(sum(x[i,j]*JuMP.value(a[i])*JuMP.value(a[j]) for j in 1:n) for i in 1:n ) <= sum(JuMP.value(a[i]) for i in 1:n)-sum(JuMP.value(a[i])*JuMP.value(h[i]) for i in 1:n))
-			JuMP.optimize!(model)
-			global solving_time = solving_time + MOI.get(model, MOI.SolveTime())
+			
+			#mise a jour pour voir si l'objectif est positif
+			global obj_value = JuMP.objective_value(sub_problem)
+
+			if obj_value>0
+				#ajout de la contrainte qui viole le plus et resolution du sous probleme
+				S = BitArray(value.(a))
+	        	i0 = BitArray(value.(h))
+	        	@constraint(model, sum(x[S,S]) <= sum(x_tilde[S]) - sum(x_tilde[i0]))
+
+				#@constraint(model, sum(sum(x[i,j]*JuMP.value(a[i])*JuMP.value(a[j]) for j in 1:n) for i in 1:n ) <= sum(JuMP.value(a[i]) for i in 1:n)-sum(JuMP.value(a[i])*JuMP.value(h[i]) for i in 1:n))
+				JuMP.optimize!(model)
+				global solving_time = solving_time + MOI.get(model, MOI.SolveTime())
+			end
 			if floor(solving_time)% 30 ==0
 				println("temps passé : ",solving_time)
 			end
 			redirect_stdout(oldstd) #rediriger l'output vers sa sortie normale
-			#mise a jour pour voir si l'objectif est positif
-			global obj_value = JuMP.objective_value(sub_problem)
-
 		end
 		#JuMP.unset_binary(x::Matrix{VariableRef})
 		#JuMP.optimize!(model)
 		#global solving_time = solving_time + MOI.get(model, MOI.SolveTime())
-	println("fin2")
-
+		JuMP.optimize!(model)
+		global solving_time = solving_time + MOI.get(model, MOI.SolveTime())
+		println("Temps de résolution : ", solving_time)
+		println(JuMP.objective_value(model))
+		println("fin2")
 	end
 
-#JuMP.optimize!(model)
-#global solving_time = solving_time + MOI.get(model, MOI.SolveTime())
-println("Temps de résolution : ", solving_time)
-println(JuMP.objective_value(model))
 
 
 
