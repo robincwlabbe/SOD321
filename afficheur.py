@@ -2,11 +2,10 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 
-instances = '40'
+instances = '20'
 with open("C:/Users/User/Desktop/3A/M2/SOD321/SOD321/instance_"+instances+"_1.txt") as f:
     lines = f.readlines()
-x = pd.read_csv("C:/Users/User/Desktop/3A/M2/SOD321/SOD321/results_"+instances+".csv", header = None)
-
+x = pd.read_csv("C:/Users/User/Desktop/3A/M2/SOD321/SOD321/matrix_x_inst_20_expo_sep_gen_relaxation_continue.csv", header= None)
 ids = []
 for i in range(len(x)):
     for j in range(len(x)):
