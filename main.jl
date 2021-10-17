@@ -20,7 +20,12 @@ include("functions.jl")
 # regions : array such that regions[region number] =
 # list of airports in that region
 # coords : coordinates of all airports
-# mod : exponential or polynomial formulation to solve the problem.
+# mod : formulation to solve the problem :
+#		polynomial, 
+#		exponential_1 pour contraintes exponentielles et sep de base, 
+#		exponential_2 pour contraintes exponentielles et sep generalisee,
+#		razorback pour contraintes exponentielles et sep generalisee uniquement avec la relaxation continue du probleme principal, puis ajout des contraintes exponentielles
+# Return the matrix x, the optimal value and the total solving time
 # ---------------------------------------------------------------
 function resolution(path,mod)
 	n,d,f,Amin,Nr,R,regions,coords = readInstance(path)
@@ -246,10 +251,18 @@ function resolution(path,mod)
 		end
 	    set_silent(model)
 		isOptimal = false
+		egalite_obj_value = 0
+		new_obj = 0
 		while !(isOptimal)
 			optimize!(model)
 			println("Current objective value : ",objective_value(model))
-
+			old_obj=new_obj
+			new_obj = objective_value(model)
+			if old_obj === new_obj
+				egalite_obj_value += 1
+			else
+				egalite_obj_value = 0
+			end
 			#creation sous probleme
 			oldstd = stdout
 			redirect_stdout(open("null", "w")) #rediriger temporairement l'output
@@ -271,7 +284,7 @@ function resolution(path,mod)
 
 			optimize!(sub_problem)
 
-			if (objective_value(sub_problem)>0)
+			if (objective_value(sub_problem)>0) && (egalite_obj_value < 10)
 				println("Violated subtour constraint found.")
 				#ajout de la contrainte qui viole le plus et resolution du sous probleme
 				
@@ -288,7 +301,11 @@ function resolution(path,mod)
 				=#
 				
 			else
-				println("No violated subtour constraints for root relaxation.")
+				if (objective_value(sub_problem)<=0)
+					println("No violated subtour constraints for root relaxation.")
+				else
+					println("Root relaxation not impoved after adding 10 new inequalities.")
+					println("Start the polynomial method.")
 				isOptimal=true
 				for v in all_variables(model)
 					set_binary(v)
@@ -299,6 +316,7 @@ function resolution(path,mod)
 				@variable(model, u[i = 1:n], Int)
 				@constraint(model, subtour[i=1:n, j=1:n],
 					u[j] >= u[i] + 1 - n * (1 - x[i, j]))
+				unset_silent(model)
 				JuMP.optimize!(model)
 
 
